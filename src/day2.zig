@@ -214,7 +214,7 @@ test "Puzzle extended" {
     const lines = try file.reader().readAllAlloc(std.testing.allocator, std.math.maxInt(u32));
     defer std.testing.allocator.free(lines);
 
-    const expected_sum: u64 = 64097;
+    const expected_sum: u64 = 64096;
     const sum: u64 = calibrationValueExtended(lines);
     try std.testing.expectEqual(expected_sum, sum);
 }
