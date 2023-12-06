@@ -19,6 +19,10 @@ const Position = struct {
         return self.start - 1;
     }
 
+    pub fn isNeighbourNumber(self: *const Self, token: *const Token) bool {
+        token.isNeighbourSymbol(self);
+    }
+
     pub fn isNeighbourSymbol(self: *const Self, symbol: *const Token) bool {
         if (!symbol.is_symbol()) return false;
 
