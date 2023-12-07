@@ -24,7 +24,7 @@ const Position = struct {
     }
 
     pub fn isNeighbourSymbol(self: *const Self, symbol: *const Token) bool {
-        if (!symbol.is_symbol()) return false;
+        if (!symbol.isSymbol()) return false;
 
         const pos = symbol.position() orelse unreachable;
 
@@ -36,11 +36,11 @@ const Position = struct {
             const symbol_pos = token.position() orelse return false;
 
             // Past relevant section
-            if (!token.is_symbol() and symbol_pos.start > self.end + 1) {
+            if (!token.isSymbol() and symbol_pos.start > self.end + 1) {
                 return false;
             }
 
-            if (!token.is_symbol()) {
+            if (!token.isSymbol()) {
                 continue;
             }
 
@@ -55,6 +55,25 @@ const Position = struct {
 };
 
 const TokenTag = enum { none, symbol, number, gear };
+const Gear =
+    struct {
+    const Self = @This();
+    pos: Position,
+    vertices: [2]u64 = [_]u64{0} ** 2,
+    count: u8 = 0,
+
+    pub fn ratio(self: *const Self) u64 {
+        if (self.count != 2) return 0;
+        return self.vertices[0] * self.vertices[1];
+    }
+
+    pub fn addVertice(self: *Self, n: u64) void {
+        if (n == 0) return;
+        self.*.count += 1;
+        if (self.count > 2) return;
+        self.vertices[self.count - 1] = n;
+    }
+};
 
 const Token = union(TokenTag) {
     const Self = @This();
@@ -66,25 +85,16 @@ const Token = union(TokenTag) {
         value: ?u64 = null,
         processed: bool = false,
     },
-    gear: struct {
-        pos: Position,
-        vertices: [2]u64 = [_]u64{0} ** 2,
-        count: u8 = 0,
-    },
+    gear: Gear,
 
-    pub fn ratio(self: *Self) u64 {
-        switch (self.*) {
-            Token.gear => |g| {
-                if (g.count != 2) {
-                    return 0;
-                }
-                return g.vertices[0].value() * g.vertices[1].value();
-            },
-            else => return 0,
-        }
+    pub fn asGear(self: *Self) ?*Gear {
+        return switch (self.*) {
+            Token.gear => |*g| g,
+            else => null,
+        };
     }
 
-    pub fn is_gear(self: *Self) bool {
+    pub fn isGear(self: *Self) bool {
         return switch (self.*) {
             Token.gear => true,
             else => false,
@@ -98,7 +108,7 @@ const Token = union(TokenTag) {
         }
     }
 
-    pub fn is_symbol(self: Self) bool {
+    pub fn isSymbol(self: Self) bool {
         return switch (self) {
             TokenTag.symbol, TokenTag.gear => true,
             else => false,
@@ -128,7 +138,7 @@ fn checkNeighbours(list: TokenList) u64 {
     var sum: u64 = 0;
 
     for (list.items, 0..) |*p, i| {
-        if (p.is_symbol()) continue;
+        if (p.isSymbol()) continue;
         const before =
             i > 0 and p.position().?.isNeighbourSymbol(&list.items[i - 1]);
 
@@ -143,13 +153,58 @@ fn checkNeighbours(list: TokenList) u64 {
     return sum;
 }
 
+fn collectRatios(current: ?TokenList, previous: ?TokenList) u64 {
+    const prev = previous orelse return 0;
+
+    var sum: u64 = 0;
+
+    if (current) |list| {
+        for (list.items, 0..) |*token, i| {
+            var gear = token.asGear() orelse continue;
+
+            for (prev.items) |prev_item| {
+                const prev_pos = prev_item.position() orelse continue;
+                if (prev_pos.start > gear.pos.end + 1) break;
+
+                if (gear.pos.start >= prev_pos.boundaryStart() and gear.pos.end <= prev_pos.end + 1)
+                    gear.addVertice(prev_item.value());
+            }
+            if (i > 0)
+                gear.addVertice(list.items[i - 1].value());
+            gear.addVertice(list.items[@min(list.items.len - 1, i + 1)].value());
+        }
+    }
+
+    for (prev.items) |*token| {
+        var gear = token.asGear() orelse continue;
+
+        if (current) |list| {
+            for (list.items) |item| {
+                const pos = item.position() orelse continue;
+                if (pos.start > gear.pos.end + 1) break;
+
+                if (gear.pos.start >= pos.boundaryStart() and gear.pos.end <= pos.end + 1)
+                    gear.addVertice(item.value());
+            }
+        }
+
+        // std.debug.print("### \n\n {any} \n\n", .{gear});
+
+        if (gear.count == 2) {
+            sum += gear.ratio();
+        }
+    }
+
+    return sum;
+}
+
 fn sumList(list: TokenList, previous: ?TokenList) u64 {
     var sum = checkNeighbours(list);
 
     const prev = previous orelse return sum;
 
     for (prev.items) |*p| {
-        if (p.is_symbol()) continue;
+        if (p.isSymbol()) continue;
         if (!p.position().?.hasAdjacentSymbol(&list)) continue;
 
         sum += p.value();
@@ -157,11 +212,34 @@ fn sumList(list: TokenList, previous: ?TokenList) u64 {
     }
 
     for (list.items) |*p| {
-        if (p.is_symbol()) continue;
+        if (p.isSymbol()) continue;
         if (!p.position().?.hasAdjacentSymbol(&prev)) continue;
 
         sum += p.value();
         p.mark();
+    }
+
+    return sum;
+}
+
+fn calibrationValueExtended(ally: std.mem.Allocator, lines: []const u8) !u64 {
+    var arena = std.heap.ArenaAllocator.init(ally);
+    defer arena.deinit();
+    var it = std.mem.splitSequence(u8, lines, "\n");
+
+    var sum: u64 = 0;
+    var i: u8 = 0;
+    var previous: ?TokenList = null;
+    while (it.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+        const result = try decodeLine(arena.allocator(), line, i);
+        const list_sum = collectRatios(result, previous);
+        previous = result;
+
+        i += 1;
+        sum += list_sum;
     }
 
     return sum;
@@ -189,6 +267,7 @@ fn calibrationValue(ally: std.mem.Allocator, lines: []const u8) !u64 {
 
     return sum;
 }
+
 fn addAndReset(line: []const u8, list: *TokenList, state: *Token, end: usize) !void {
     switch (state.*) {
         Token.symbol => |*s| {
@@ -468,7 +547,37 @@ test "day3 puzzle" {
     const lines = try file.reader().readAllAlloc(std.testing.allocator, std.math.maxInt(u32));
     defer std.testing.allocator.free(lines);
 
-    const expected: u64 = 520019;
+    const expected_sum: u64 = 520019;
     const sum: u64 = try calibrationValue(std.testing.allocator, lines);
+    try std.testing.expectEqual(expected_sum, sum);
+}
+
+test "day3 calibration extended" {
+    const lines =
+        \\467..114..
+        \\...*......
+        \\..35..633.
+        \\......#...
+        \\617*......
+        \\.....+.58.
+        \\..592.....
+        \\......755.
+        \\...$.*....
+        \\.664.598..
+    ;
+
+    const expected: u64 = 467835;
+    const sum: u64 = try calibrationValueExtended(std.testing.allocator, lines);
     try std.testing.expectEqual(expected, sum);
+}
+
+test "day3 puzzle extended" {
+    const file = try std.fs.cwd().openFile("inputs/day3.txt", .{});
+    defer file.close();
+    const lines = try file.reader().readAllAlloc(std.testing.allocator, std.math.maxInt(u32));
+    defer std.testing.allocator.free(lines);
+
+    const expected_sum: u64 = 520019;
+    const sum: u64 = try calibrationValueExtended(std.testing.allocator, lines);
+    try std.testing.expectEqual(expected_sum, sum);
 }
