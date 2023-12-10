@@ -287,12 +287,10 @@ test "day5 calibration" {
         .maps = &seed_ranges,
     };
 
-    // try std.testing.expectEqualSlices(Range, expected.maps.last().ranges.items, map.maps.last().ranges.items);
-
     var em: *RangeMap = expected.maps;
     var rm: *RangeMap = map.maps;
     for (MAP_CATEGORIES[0..7]) |cat| {
-        std.debug.print("cat: {s}\n\n", .{cat});
+        // std.debug.print("cat: {s}\n\n", .{cat});
         try std.testing.expectEqualSlices(Range, em.ranges.items, rm.ranges.items);
         if (std.mem.eql(u8, "humidity", cat)) continue;
         em = em.next.?;
