@@ -132,18 +132,46 @@ fn parseNumbers(line: []const u8) !Range {
     };
 }
 
-fn decodeLines(
-    ally: std.mem.Allocator,
-    line: []const u8,
-) !Map {
-    var lines_it = std.mem.splitSequence(u8, line, "\n");
-    var seeds_it = std.mem.splitSequence(u8, lines_it.next().?["seeds: ".len..], " ");
+const CallParseSeeds = *const fn (ally: std.mem.Allocator, line: []const u8) anyerror!Seeds;
+
+fn parseSeeds(ally: std.mem.Allocator, line: []const u8) !Seeds {
+    var seeds_it = std.mem.splitSequence(u8, line["seeds: ".len..], " ");
 
     var seeds = Seeds.init(ally);
 
     while (seeds_it.next()) |seed_n| {
         try seeds.append(try std.fmt.parseInt(u64, seed_n, 10));
     }
+
+    return seeds;
+}
+
+fn parseSeedsExtended(ally: std.mem.Allocator, line: []const u8) !Seeds {
+    var seeds_it = std.mem.splitSequence(u8, line["seeds: ".len..], " ");
+
+    var seeds = Seeds.init(ally);
+
+    while (true) {
+        const start =
+            try std.fmt.parseInt(u64, seeds_it.next() orelse break, 10);
+        const size =
+            try std.fmt.parseInt(u64, seeds_it.next() orelse break, 10);
+
+        for (start..start + size) |seed_n|
+            try seeds.append(seed_n);
+    }
+
+    return seeds;
+}
+
+fn decodeLines(
+    ally: std.mem.Allocator,
+    line: []const u8,
+    parse_seeds_fn: CallParseSeeds,
+) !Map {
+    var lines_it = std.mem.splitSequence(u8, line, "\n");
+
+    const seeds = try parse_seeds_fn(ally, lines_it.next().?);
 
     var res: ?Map = null;
     //empty
@@ -218,7 +246,7 @@ test "day5 calibration" {
         \\56 93 4
     ;
     // const map = try decodeLines(ally, lines);
-    var map = try decodeLines(ally, lines);
+    var map = try decodeLines(ally, lines, parseSeeds);
     defer map.deinit();
 
     var humidity_ranges: RangeMap = .{
@@ -290,7 +318,6 @@ test "day5 calibration" {
     var em: *RangeMap = expected.maps;
     var rm: *RangeMap = map.maps;
     for (MAP_CATEGORIES[0..7]) |cat| {
-        // std.debug.print("cat: {s}\n\n", .{cat});
         try std.testing.expectEqualSlices(Range, em.ranges.items, rm.ranges.items);
         if (std.mem.eql(u8, "humidity", cat)) continue;
         em = em.next.?;
@@ -310,9 +337,67 @@ test "day 5 puzzle " {
     const lines = try file.reader().readAllAlloc(ally, std.math.maxInt(u32));
     defer ally.free(lines);
 
-    var map = try decodeLines(ally, lines);
+    var map = try decodeLines(ally, lines, parseSeeds);
     defer map.deinit();
 
     const expected_loc: u64 = 510109797;
+    try std.testing.expectEqual(expected_loc, try map.lowestLocation());
+}
+
+test "day 5 calibration extended" {
+    const ally = std.testing.allocator;
+    const lines =
+        \\seeds: 79 14 55 13
+        \\
+        \\seed-to-soil map:
+        \\50 98 2
+        \\52 50 48
+        \\
+        \\soil-to-fertilizer map:
+        \\0 15 37
+        \\37 52 2
+        \\39 0 15
+        \\
+        \\fertilizer-to-water map:
+        \\49 53 8
+        \\0 11 42
+        \\42 0 7
+        \\57 7 4
+        \\
+        \\water-to-light map:
+        \\88 18 7
+        \\18 25 70
+        \\
+        \\light-to-temperature map:
+        \\45 77 23
+        \\81 45 19
+        \\68 64 13
+        \\
+        \\temperature-to-humidity map:
+        \\0 69 1
+        \\1 0 69
+        \\
+        \\humidity-to-location map:
+        \\60 56 37
+        \\56 93 4
+    ;
+    var map = try decodeLines(ally, lines, parseSeedsExtended);
+    defer map.deinit();
+
+    const expected_loc: u64 = 46;
+    try std.testing.expectEqual(expected_loc, try map.lowestLocation());
+}
+
+test "day 5 puzzle extended" {
+    const ally = std.testing.allocator;
+    const file = try std.fs.cwd().openFile("inputs/day5.txt", .{});
+    defer file.close();
+    const lines = try file.reader().readAllAlloc(ally, std.math.maxInt(u32));
+    defer ally.free(lines);
+
+    var map = try decodeLines(ally, lines, parseSeedsExtended);
+    defer map.deinit();
+
+    const expected_loc: u64 = 9622622;
     try std.testing.expectEqual(expected_loc, try map.lowestLocation());
 }
