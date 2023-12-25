@@ -1,3 +1,4 @@
+const lib = @import("lib.zig");
 const std = @import("std");
 
 const Map = struct {
@@ -120,9 +121,7 @@ test "day 8 calibration steps" {
 
 test "day 8 input part 1" {
     const ally = std.testing.allocator;
-    const file = try std.fs.cwd().openFile("inputs/day8.txt", .{});
-    defer file.close();
-    const lines = try file.reader().readAllAlloc(ally, std.math.maxInt(u32));
+    const lines = try lib.readFile(ally, "inputs/day8.txt");
     defer ally.free(lines);
 
     var map = try decodeLines(ally, lines);
@@ -156,9 +155,7 @@ test "day 8 calibration part 2" {
 
 test "day 8 input part 2" {
     const ally = std.testing.allocator;
-    const file = try std.fs.cwd().openFile("inputs/day8.txt", .{});
-    defer file.close();
-    const lines = try file.reader().readAllAlloc(ally, std.math.maxInt(u32));
+    const lines = try lib.readFile(ally, "inputs/day8.txt");
     defer ally.free(lines);
 
     var map = try decodeLines(ally, lines);
