@@ -6,5 +6,6 @@ test {
     // _ = @import("./day5.zig");
     // _ = @import("./day7.zig");
     // _ = @import("./day8.zig");
-    _ = @import("./day9.zig");
+    // _ = @import("./day9.zig");
+    _ = @import("./day10.zig");
 }
